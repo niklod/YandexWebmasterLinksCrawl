@@ -30,9 +30,8 @@ def send_message(message, chat_name):
     password = config['password']
     proxy_address = config['proxy_address']
     port = config['port']
-
+    chat_id = config[chat_name]
     apihelper.proxy = {'https':'socks5h://{}:{}@{}:{}'.format(userproxy, password, proxy_address, port)}
-    chat_id = yaml.load( open(os.path.join(os.getcwd(), 'config.yaml'), 'r', encoding='utf-8'), Loader=yaml.FullLoader)[chat_name]
     bot.send_message(chat_id, message)
 
 def auth():
