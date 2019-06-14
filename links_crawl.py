@@ -1,6 +1,6 @@
 #Отправка страниц на переобход в яндекс вебмастере. Очередь на переобход формируется из файла
 #https://docs.google.com/spreadsheets/d/1BHk6V-GFLdBmQBnV9OUXXWVvdzipz6Gzzpbx6p8R4eQ/edit#gid=0
-#Данный файл доступен только для учетки goodspr
+#Данный файл доступен только для учетки goods
 
 import requests
 from oauth2client.service_account import ServiceAccountCredentials
@@ -12,27 +12,38 @@ from telebot import apihelper
 import yaml
 import os
 
+def get_curr_path():
+    return os.getcwd()
+
+
+def get_yaml_info(filename, param):
+    curr_path = get_curr_path()
+    return yaml.load( open(os.path.join( curr_path, filename ), 'r', encoding='utf-8'), Loader=yaml.FullLoader )[param]
+
+
 def get_yandex_token():
-    config = yaml.load(open(os.path.join(os.getcwd(), 'config.yaml'), 'r', encoding='utf-8'), Loader=yaml.FullLoader)
-    yandex_token = config['yandex_token']
+    yandex_token = get_yaml_info('config.yaml', 'yandex_token')
     return yandex_token
 
+
 def get_telegram_token():
-    config = yaml.load(open(os.path.join(os.getcwd(), 'config.yaml'), 'r', encoding='utf-8'), Loader=yaml.FullLoader)
-    telegtam_token = config['bot_token']
+    telegtam_token = get_yaml_info('config.yaml', 'bot_token')
     return telegtam_token
+
 
 def send_message(message, chat_name):
     telegram_token = get_telegram_token()
     bot = telebot.TeleBot(telegram_token)
-    config = yaml.load(open(os.path.join(os.getcwd(), 'config.yaml'), 'r', encoding='utf-8'), Loader=yaml.FullLoader)
-    userproxy = config['userproxy']
-    password = config['password']
-    proxy_address = config['proxy_address']
-    port = config['port']
-    chat_id = config[chat_name]
+
+    userproxy = get_yaml_info('config.yaml', 'userproxy')
+    password = get_yaml_info('config.yaml', 'password')
+    proxy_address = get_yaml_info('config.yaml', 'proxy_address')
+    port = get_yaml_info('config.yaml', 'port')
+    chat_id = get_yaml_info('config.yaml', chat_name)
     apihelper.proxy = {'https':'socks5h://{}:{}@{}:{}'.format(userproxy, password, proxy_address, port)}
+
     bot.send_message(chat_id, message)
+
 
 def auth():
     #Функция авторизации в API google
@@ -41,35 +52,43 @@ def auth():
     gc = gspread.authorize(credentials)
     return gc
 
+
 def parse_limits():
     #возвращает остаток квоты на перебход из яндекс вебмастера
     #технический токен на аккаунт goodspr
-    config = yaml.load(open(os.path.join(os.getcwd(), 'config.yaml'), 'r', encoding='utf-8'), Loader=yaml.FullLoader)
-    host_id = config['host_id']
+    host_id = get_yaml_info('config.yaml', 'host_id')
 
     http_header = {'Authorization': 'OAuth ' + get_yandex_token()} #http заголовок для авторизации
-    r = requests.get('https://api.webmaster.yandex.net/v4/user/', headers=http_header, timeout=5.000)
-    user_id = r.json()['user_id'] # получаем user_id
     request_url = 'https://api.webmaster.yandex.net/v4/user/{}/hosts/{}/recrawl/quota/'
+
+    r = requests.get('https://api.webmaster.yandex.net/v4/user/', headers=http_header, timeout=5.000)
+    try:
+        user_id = r.json()['user_id'] # получаем user_id
+    except r.exceptions.RequestException as e:
+        send_message('Ошибка в получении user_id, код ответа: {}'.format(e), 'my_chat_id')
     
     request = requests.get(request_url.format(user_id, host_id), headers=http_header, timeout=5.000)
-    request = request.json()
-    return int(request['quota_remainder'])
+    try:
+        request = request.json()
+        return int(request['quota_remainder'])
+    except request.exceptions.RequestException as e:
+        send_message('Ошибка в парсинге лимитов, код ответа: {}'.format(e), 'my_chat_id')
+
 
 def get_webmasters_lists(auth):
     #Переводим урлы из sheet1 в словарь с разбивкой по веб-мастерам
     gc = auth
     webmaster_urls = {}
     urls_sheet = gc.open('python_test').sheet1.get_all_records()
+
     for row in urls_sheet:
         webmaster = row['Имя спеца'].strip().lower()
         url = row['URL'].strip()
-        webmaster_urls.setdefault( webmaster, [] )
-        if url in webmaster_urls[ webmaster ]:
-            pass
-        else:
-            webmaster_urls[ webmaster ].append( url )
+        webmaster_urls.setdefault(webmaster, [])
+        if url not in webmaster_urls[webmaster]:
+            webmaster_urls[webmaster].append(url)
     return webmaster_urls
+
 
 def log(key, ok_num, error_num, auth):
     #функция логирования, принимает 3 статуса: 1-все урлы загружены; 2-ошибки в загрузке; 3-нечего загружать
@@ -79,18 +98,20 @@ def log(key, ok_num, error_num, auth):
     log_sheet = gc.open('python_test').worksheet('Логи')
     if key == 1:
         log_sheet.append_row([today, 'Все URL в рамках квоты отправлены на переобход'])
-        send_message('Статус переобхода URL:\n{} - {} из {} URL в рамках квоты отправлены на переобход'.format(today, ok_num, ok_num + error_num), 'seo_chat_id')
+        send_message('Статус переобхода URL:\n{} - {} из {} URL в рамках квоты отправлены на переобход'.format(today, ok_num, ok_num + error_num), 'my_chat_id')
     if key == 2:
         log_sheet.append_row([today, 'Error: Часть или все URL не были отправлены на переобход'])
-        send_message('Статус переобхода URL:\n{} - Error: {} из {} URL не были отправлены на переобход'.format(today, error_num, ok_num + error_num), 'seo_chat_id')
+        send_message('Статус переобхода URL:\n{} - Error: {} из {} URL не были отправлены на переобход'.format(today, error_num, ok_num + error_num), 'my_chat_id')
     if key == 3:
         log_sheet.append_row([today, 'Нет URL для переобхода'])
         send_message('Статус переобхода URL:\n{} - Нет URL для переобхода'.format(today), 'my_chat_id')
+
 
 def make_queue(dictionary):
     #Составляет очередь из урлов для отправки на переобход.
     #Возвращает лист URL для переобхода
     queue_list = []
+
     if dictionary.values():
         limit = int(parse_limits()/len(dictionary.values()))
     else:
@@ -145,6 +166,7 @@ def make_queue(dictionary):
         return False
     return queue_list
 
+
 def delete_url(url, auth):
     #функция удаления строки с URL из листа sheet1
     gc = auth
@@ -158,6 +180,7 @@ def delete_url(url, auth):
         else:
             row_num += 1
     return False
+
 
 def send_request(urls):
     #отправка запроса на переобход страниц
@@ -197,8 +220,12 @@ def send_request(urls):
     else:
         log(2, headers['ok'], headers['error'], auth())
 
+
 def main():
     #основная функция
     queue = make_queue(get_webmasters_lists(auth()))
     send_request(queue)
-main()
+
+
+if __name__ == "__main__":
+    main()
