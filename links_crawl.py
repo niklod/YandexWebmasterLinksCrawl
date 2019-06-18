@@ -60,15 +60,15 @@ def parse_limits():
 
     http_header = {'Authorization': 'OAuth ' + get_yandex_token()} #http заголовок для авторизации
     request_url = 'https://api.webmaster.yandex.net/v4/user/{}/hosts/{}/recrawl/quota/'
-
-    r = requests.get('https://api.webmaster.yandex.net/v4/user/', headers=http_header, timeout=5.000)
+    
     try:
+        r = requests.get('https://api.webmaster.yandex.net/v4/user/', headers=http_header, timeout=5.000)
         user_id = r.json()['user_id'] # получаем user_id
     except r.exceptions.RequestException as e:
         send_message('Ошибка в получении user_id, код ответа: {}'.format(e), 'my_chat_id')
     
-    request = requests.get(request_url.format(user_id, host_id), headers=http_header, timeout=5.000)
     try:
+        request = requests.get(request_url.format(user_id, host_id), headers=http_header, timeout=5.000)
         request = request.json()
         return int(request['quota_remainder'])
     except request.exceptions.RequestException as e:
