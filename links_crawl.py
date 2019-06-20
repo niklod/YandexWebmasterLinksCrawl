@@ -11,6 +11,7 @@ import telebot
 from telebot import apihelper
 import yaml
 import os
+import time
 
 def get_curr_path():
     return os.getcwd()
@@ -98,10 +99,10 @@ def log(key, ok_num, error_num, auth):
     log_sheet = gc.open('python_test').worksheet('Логи')
     if key == 1:
         log_sheet.append_row([today, 'Все URL в рамках квоты отправлены на переобход'])
-        send_message('Статус переобхода URL:\n{} - {} из {} URL в рамках квоты отправлены на переобход'.format(today, ok_num, ok_num + error_num), 'my_chat_id')
+        send_message('Статус переобхода URL:\n{} - {} из {} URL в рамках квоты отправлены на переобход'.format(today, ok_num, ok_num + error_num), 'seo_chat_id')
     if key == 2:
         log_sheet.append_row([today, 'Error: Часть или все URL не были отправлены на переобход'])
-        send_message('Статус переобхода URL:\n{} - Error: {} из {} URL не были отправлены на переобход'.format(today, error_num, ok_num + error_num), 'my_chat_id')
+        send_message('Статус переобхода URL:\n{} - Error: {} из {} URL не были отправлены на переобход'.format(today, error_num, ok_num + error_num), 'seo_chat_id')
     if key == 3:
         log_sheet.append_row([today, 'Нет URL для переобхода'])
         send_message('Статус переобхода URL:\n{} - Нет URL для переобхода'.format(today), 'my_chat_id')
@@ -209,11 +210,13 @@ def send_request(urls):
         try:
             request = requests.post(request_url.format(user_id, host_id), headers=http_header, data=r)
             request.raise_for_status()
-        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.HTTPError):
-            headers['error'] += 1
-        else:
             headers['ok'] += 1
             delete_url(url, auth()) #удаляем URL из sheet
+        except requests.exceptions.RequestException as e:
+            print(e)
+            headers['error'] += 1
+
+        time.sleep(1) #Ждем секунду чтобы не нагружать API google
             
     if headers['ok'] == len(urls):
         log(1, headers['ok'], 0, auth())
